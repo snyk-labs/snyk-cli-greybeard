@@ -60,23 +60,42 @@ get_latest_release() {
         exit 1
     fi
     
-    # Check if the release exists (non-empty response and no error message)
-    if [ -z "$LATEST_RELEASE" ] || echo "$LATEST_RELEASE" | grep -q "API rate limit exceeded" || echo "$LATEST_RELEASE" | grep -q "\"message\":"; then
-        echo -e "${YELLOW}Warning: No releases found or API error. Falling back to latest code from main branch.${NC}"
+    # Verify we got a valid response (not empty and no error message)
+    if [ -z "$LATEST_RELEASE" ]; then
+        echo -e "${YELLOW}Warning: Empty response when fetching latest release. Falling back to main branch.${NC}"
+        USE_MAIN_BRANCH=true
+        VERSION="main"
+        return
+    fi
+    
+    # Check for API errors
+    if echo "$LATEST_RELEASE" | grep -q "API rate limit exceeded" || echo "$LATEST_RELEASE" | grep -q "\"message\":" || echo "$LATEST_RELEASE" | grep -q "Not Found"; then
+        echo -e "${YELLOW}Warning: GitHub API error or no releases found. Falling back to main branch.${NC}"
+        echo -e "API Response: $(echo "$LATEST_RELEASE" | grep -o "\"message\":\"[^\"]*\"" | head -1)"
+        USE_MAIN_BRANCH=true
+        VERSION="main"
+        return
+    fi
+    
+    # Extract tag_name (version) - handle both JSON key formats that GitHub might return
+    if echo "$LATEST_RELEASE" | grep -q "\"tag_name\":"; then
+        VERSION=$(echo "$LATEST_RELEASE" | grep -o "\"tag_name\":\"[^\"]*\"" | head -1 | grep -o "[^\":]*$" | tr -d '\"')
+    elif echo "$LATEST_RELEASE" | grep -q "\"tag_name\": "; then
+        VERSION=$(echo "$LATEST_RELEASE" | grep -o "\"tag_name\": *\"[^\"]*\"" | head -1 | grep -o "[^\"]*$")
+    else
+        echo -e "${YELLOW}Warning: Could not find tag_name in release info. Falling back to main branch.${NC}"
+        USE_MAIN_BRANCH=true
+        VERSION="main"
+        return
+    fi
+    
+    if [ -z "$VERSION" ]; then
+        echo -e "${YELLOW}Warning: Could not determine the latest version. Falling back to main branch.${NC}"
         USE_MAIN_BRANCH=true
         VERSION="main"
     else
-        # Extract version number
-        VERSION=$(echo "$LATEST_RELEASE" | grep -o '"tag_name": *"[^"]*"' | grep -o '[^"]*$')
-        
-        if [ -z "$VERSION" ]; then
-            echo -e "${YELLOW}Warning: Could not determine the latest version. Falling back to main branch.${NC}"
-            USE_MAIN_BRANCH=true
-            VERSION="main"
-        else
-            USE_MAIN_BRANCH=false
-            echo -e "Latest version: ${GREEN}$VERSION${NC}"
-        fi
+        USE_MAIN_BRANCH=false
+        echo -e "Latest version: ${GREEN}$VERSION${NC}"
     fi
 }
 
@@ -123,6 +142,7 @@ download_binary() {
         return
     fi
     
+    # Set platform-specific binary name
     BINARY_URL=""
     ASSET_NAME="${BINARY_NAME}-$OS-$ARCH"
     
@@ -130,49 +150,54 @@ download_binary() {
         ASSET_NAME="${BINARY_NAME}-$OS-$ARCH.exe"
     fi
     
+    echo "Looking for asset: ${BLUE}$ASSET_NAME${NC}"
+    
     if command -v jq &> /dev/null; then
-        # Get download URL using jq (more reliable)
+        # Get download URL using jq (most reliable)
+        echo "Using jq to parse release data"
         BINARY_URL=$(echo "$LATEST_RELEASE" | jq -r ".assets[] | select(.name == \"$ASSET_NAME\") | .browser_download_url")
     else
-        # Extract the section containing our asset and look for browser_download_url
-        # This handles the case where URLs contain newlines
+        echo "Using fallback methods to parse release data"
+        # Method 1: Extract the section containing our asset and look for browser_download_url
         ASSET_SECTION=$(echo "$LATEST_RELEASE" | grep -A 30 "\"name\": \"$ASSET_NAME\"")
-        URL_LINE=$(echo "$ASSET_SECTION" | grep "browser_download_url")
-        if [ -n "$URL_LINE" ]; then
-            # Extract the URL part and fix potential newlines
-            BINARY_URL=$(echo "$URL_LINE" | grep -o "https://[^\"]*" | tr -d '\n\r')
+        if [ -n "$ASSET_SECTION" ]; then
+            URL_LINE=$(echo "$ASSET_SECTION" | grep "browser_download_url")
+            if [ -n "$URL_LINE" ]; then
+                # Extract the URL part and fix potential newlines
+                BINARY_URL=$(echo "$URL_LINE" | grep -o "https://[^\"]*" | tr -d '\n\r')
+                echo "Found URL (Method 1): $BINARY_URL"
+            fi
         fi
-    fi
-    
-    if [ -z "$BINARY_URL" ]; then
-        # Direct construction of the URL as a fallback
-        if [ -n "$VERSION" ] && [ "$VERSION" != "main" ]; then
+        
+        # Method 2: Directly construct URL from version
+        if [ -z "$BINARY_URL" ]; then
             # Try to construct the URL directly
-            BINARY_URL="https://github.com/$REPO/releases/download/$VERSION/$ASSET_NAME"
-            echo -e "${YELLOW}Directly constructed URL: $BINARY_URL${NC}"
+            DIRECT_URL="https://github.com/$REPO/releases/download/$VERSION/$ASSET_NAME"
+            echo "Trying direct URL: $DIRECT_URL"
             
             # Verify this URL exists
             if command -v curl &> /dev/null; then
-                HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -L -I "$BINARY_URL")
+                HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -L -I "$DIRECT_URL")
             elif command -v wget &> /dev/null; then
-                HTTP_CODE=$(wget --spider -S "$BINARY_URL" 2>&1 | grep "HTTP/" | awk '{print $2}' | tail -1)
+                HTTP_CODE=$(wget --spider -S "$DIRECT_URL" 2>&1 | grep "HTTP/" | awk '{print $2}' | tail -1)
             else
                 HTTP_CODE="404" # Just assume failure if we can't check
             fi
             
-            if [[ "$HTTP_CODE" == "404" ]]; then
-                BINARY_URL=""
+            echo "HTTP status for direct URL: $HTTP_CODE"
+            if [[ "$HTTP_CODE" == "200" || "$HTTP_CODE" == "302" ]]; then
+                BINARY_URL="$DIRECT_URL"
+                echo "Using direct URL: $BINARY_URL"
             fi
         fi
     fi
     
+    # Debug information about available assets
+    echo "Available assets in release:"
+    echo "$LATEST_RELEASE" | grep -o "\"name\": *\"[^\"]*\"" | sort
+    
     if [ -z "$BINARY_URL" ]; then
         echo -e "${YELLOW}Warning: Could not find download URL for $ASSET_NAME. Falling back to building from source.${NC}"
-        # For debugging
-        echo "Debug info:"
-        echo "OS: $OS, ARCH: $ARCH, ASSET_NAME: $ASSET_NAME"
-        echo "Available assets:"
-        echo "$LATEST_RELEASE" | grep -o "\"name\":\"[^\"]*\"" | grep -o "[^\"]*$" | grep -v "tag_name\|name\|target_commitish"
         build_from_source
         return
     fi
@@ -190,9 +215,11 @@ download_binary() {
         wget -q "$BINARY_URL" -O "$TMP_FILE"
     fi
     
-    if [ ! -f "$TMP_FILE" ]; then
-        echo -e "${RED}Error: Failed to download binary.${NC}"
-        exit 1
+    if [ ! -f "$TMP_FILE" ] || [ ! -s "$TMP_FILE" ]; then
+        echo -e "${RED}Error: Failed to download binary or file is empty.${NC}"
+        echo "Falling back to building from source..."
+        build_from_source
+        return
     fi
     
     echo -e "${GREEN}Download successful!${NC}"
@@ -273,11 +300,20 @@ remind_openai_key() {
 
 # Main installation process
 main() {
+    echo -e "${BLUE}===== Installation Started =====${NC}"
     check_dependencies
     detect_os_arch
+    
+    echo -e "${BLUE}===== Fetching Latest Release =====${NC}"
     get_latest_release
+    
+    echo -e "${BLUE}===== Preparing Binary =====${NC}"
     download_binary
+    
+    echo -e "${BLUE}===== Installing Binary =====${NC}"
     install_binary
+    
+    echo -e "${BLUE}===== Finalizing Installation =====${NC}"
     remind_openai_key
     
     echo -e "\n${GREEN}Installation complete!${NC}"
