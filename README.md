@@ -6,11 +6,21 @@ Snyk Greybeard is experienced, knowledgeable, and tired of your security ignoran
 
 ## Installation
 
-### Option 1: Download pre-built binary
+### Option 1: One-line Installer (Linux, macOS, Windows)
+
+The easiest way to install is with the following command:
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/snyk-labs/snyk-cli-greybeard/main/install.sh)"
+```
+
+This will download and install the latest version for your platform. You'll still need to set your OpenAI API key after installation.
+
+### Option 2: Download pre-built binary
 
 Download the appropriate binary for your platform from the [Releases](https://github.com/snyk-labs/snyk-cli-greybeard/releases) page.
 
-### Option 2: Build from source
+### Option 3: Build from source
 
 #### Prerequisites
 1. [Go](https://golang.org/doc/install) (1.22.5 or later)
