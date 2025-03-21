@@ -11,7 +11,7 @@ Snyk Greybeard is experienced, knowledgeable, and tired of your security ignoran
 The easiest way to install is with the following command:
 
 ```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/snyk-labs/snyk-cli-greybeard/main/install.sh)"
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/snyk-labs/snyk-cli-greybeard/refs/heads/main/install.sh)"
 ```
 
 This will download and install the latest version for your platform. You'll still need to set your OpenAI API key after installation.
