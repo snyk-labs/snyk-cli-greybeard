@@ -60,24 +60,69 @@ get_latest_release() {
         exit 1
     fi
     
-    if [ -z "$LATEST_RELEASE" ]; then
-        echo -e "${RED}Error: Failed to fetch latest release information.${NC}"
+    # Check if the release exists (non-empty response and no error message)
+    if [ -z "$LATEST_RELEASE" ] || echo "$LATEST_RELEASE" | grep -q "API rate limit exceeded" || echo "$LATEST_RELEASE" | grep -q "\"message\":"; then
+        echo -e "${YELLOW}Warning: No releases found or API error. Falling back to latest code from main branch.${NC}"
+        USE_MAIN_BRANCH=true
+        VERSION="main"
+    else
+        # Extract version number
+        VERSION=$(echo "$LATEST_RELEASE" | grep -o '"tag_name": *"[^"]*"' | grep -o '[^"]*$')
+        
+        if [ -z "$VERSION" ]; then
+            echo -e "${YELLOW}Warning: Could not determine the latest version. Falling back to main branch.${NC}"
+            USE_MAIN_BRANCH=true
+            VERSION="main"
+        else
+            USE_MAIN_BRANCH=false
+            echo -e "Latest version: ${GREEN}$VERSION${NC}"
+        fi
+    fi
+}
+
+# Build from source if no releases are available
+build_from_source() {
+    echo -e "${YELLOW}No pre-built binaries available. Building from source...${NC}"
+    
+    # Check if Go is installed
+    if ! command -v go &> /dev/null; then
+        echo -e "${RED}Error: Go is not installed, which is required to build from source.${NC}"
+        echo "Please install Go (https://golang.org/doc/install) or wait for official releases."
         exit 1
     fi
     
-    # Extract version number
-    VERSION=$(echo "$LATEST_RELEASE" | grep -o '"tag_name": *"[^"]*"' | grep -o '[^"]*$')
+    # Create a temporary directory
+    TMP_DIR=$(mktemp -d)
+    cd "$TMP_DIR"
     
-    if [ -z "$VERSION" ]; then
-        echo -e "${RED}Error: Could not determine the latest version.${NC}"
+    echo "Cloning repository..."
+    if command -v git &> /dev/null; then
+        git clone --depth 1 "https://github.com/$REPO.git" .
+    else
+        echo -e "${RED}Error: git is not installed, which is required to clone the repository.${NC}"
         exit 1
     fi
     
-    echo -e "Latest version: ${GREEN}$VERSION${NC}"
+    echo "Building binary..."
+    GOOS=$OS GOARCH=$ARCH go build -o "$BINARY_NAME"
+    
+    if [ ! -f "$BINARY_NAME" ]; then
+        echo -e "${RED}Error: Failed to build binary.${NC}"
+        exit 1
+    fi
+    
+    TMP_FILE="$TMP_DIR/$BINARY_NAME"
+    chmod +x "$TMP_FILE"
+    echo -e "${GREEN}Build successful!${NC}"
 }
 
 # Download the binary
 download_binary() {
+    if [ "$USE_MAIN_BRANCH" = true ]; then
+        build_from_source
+        return
+    fi
+    
     BINARY_URL=""
     ASSET_NAME="${BINARY_NAME}-$OS-$ARCH"
     
@@ -89,13 +134,47 @@ download_binary() {
         # Get download URL using jq (more reliable)
         BINARY_URL=$(echo "$LATEST_RELEASE" | jq -r ".assets[] | select(.name == \"$ASSET_NAME\") | .browser_download_url")
     else
-        # Fallback to grep/sed if jq is not available
-        BINARY_URL=$(echo "$LATEST_RELEASE" | grep -o "\"browser_download_url\":\"[^\"]*$ASSET_NAME\"" | grep -o "https://[^\"]*")
+        # Extract the section containing our asset and look for browser_download_url
+        # This handles the case where URLs contain newlines
+        ASSET_SECTION=$(echo "$LATEST_RELEASE" | grep -A 30 "\"name\": \"$ASSET_NAME\"")
+        URL_LINE=$(echo "$ASSET_SECTION" | grep "browser_download_url")
+        if [ -n "$URL_LINE" ]; then
+            # Extract the URL part and fix potential newlines
+            BINARY_URL=$(echo "$URL_LINE" | grep -o "https://[^\"]*" | tr -d '\n\r')
+        fi
     fi
     
     if [ -z "$BINARY_URL" ]; then
-        echo -e "${RED}Error: Could not find download URL for $ASSET_NAME${NC}"
-        exit 1
+        # Direct construction of the URL as a fallback
+        if [ -n "$VERSION" ] && [ "$VERSION" != "main" ]; then
+            # Try to construct the URL directly
+            BINARY_URL="https://github.com/$REPO/releases/download/$VERSION/$ASSET_NAME"
+            echo -e "${YELLOW}Directly constructed URL: $BINARY_URL${NC}"
+            
+            # Verify this URL exists
+            if command -v curl &> /dev/null; then
+                HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -L -I "$BINARY_URL")
+            elif command -v wget &> /dev/null; then
+                HTTP_CODE=$(wget --spider -S "$BINARY_URL" 2>&1 | grep "HTTP/" | awk '{print $2}' | tail -1)
+            else
+                HTTP_CODE="404" # Just assume failure if we can't check
+            fi
+            
+            if [[ "$HTTP_CODE" == "404" ]]; then
+                BINARY_URL=""
+            fi
+        fi
+    fi
+    
+    if [ -z "$BINARY_URL" ]; then
+        echo -e "${YELLOW}Warning: Could not find download URL for $ASSET_NAME. Falling back to building from source.${NC}"
+        # For debugging
+        echo "Debug info:"
+        echo "OS: $OS, ARCH: $ARCH, ASSET_NAME: $ASSET_NAME"
+        echo "Available assets:"
+        echo "$LATEST_RELEASE" | grep -o "\"name\":\"[^\"]*\"" | grep -o "[^\"]*$" | grep -v "tag_name\|name\|target_commitish"
+        build_from_source
+        return
     fi
     
     echo "Downloading ${BLUE}$ASSET_NAME${NC} from ${BLUE}$BINARY_URL${NC}"
