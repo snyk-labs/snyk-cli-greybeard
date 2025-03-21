@@ -12,6 +12,12 @@ import (
 	"time"
 )
 
+// Build information (set by linker flags)
+var (
+	Version   = "dev"
+	BuildTime = "unknown"
+)
+
 // OpenAIRequest represents the request to OpenAI API
 type OpenAIRequest struct {
 	Model       string    `json:"model"`
@@ -43,6 +49,12 @@ type OpenAIResponse struct {
 }
 
 func main() {
+	// Handle version flag
+	if len(os.Args) > 1 && (os.Args[1] == "-v" || os.Args[1] == "--version") {
+		fmt.Printf("Snyk CLI Greybeard v%s (built %s)\n", Version, BuildTime)
+		os.Exit(0)
+	}
+
 	// Check for OpenAI API key
 	apiKey := os.Getenv("OPENAI_API_KEY")
 	if apiKey == "" {
