@@ -119,6 +119,7 @@ make linux-arm64
 make darwin-amd64
 make darwin-arm64
 make windows-amd64
+make windows-arm64
 ```
 
 ## License

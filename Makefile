@@ -36,7 +36,7 @@ else ifneq (,$(findstring MINGW,$(UNAME_S)))
 endif
 
 # Supported platforms
-PLATFORMS=linux-amd64 linux-arm64 darwin-amd64 darwin-arm64 windows-amd64
+PLATFORMS=linux-amd64 linux-arm64 darwin-amd64 darwin-arm64 windows-amd64 windows-arm64
 
 .PHONY: all clean compile install $(PLATFORMS)
 
@@ -75,6 +75,11 @@ darwin-arm64: $(DIST_DIR)
 windows-amd64: $(DIST_DIR)
 	@echo "Building for Windows (amd64)..."
 	GOOS=windows GOARCH=amd64 go build -o $(DIST_DIR)/$(BINARY_NAME)-windows-amd64.exe -ldflags "-X main.Version=$(VERSION) -X main.BuildTime=$(BUILD_TIME)"
+
+# Windows ARM64
+windows-arm64: $(DIST_DIR)
+	@echo "Building for Windows (arm64)..."
+	GOOS=windows GOARCH=arm64 go build -o $(DIST_DIR)/$(BINARY_NAME)-windows-arm64.exe -ldflags "-X main.Version=$(VERSION) -X main.BuildTime=$(BUILD_TIME)"
 
 # Install the binary to the system based on detected platform
 install:
@@ -131,4 +136,5 @@ help:
 	@echo "  make linux-arm64"
 	@echo "  make darwin-amd64"
 	@echo "  make darwin-arm64"
-	@echo "  make windows-amd64" 
+	@echo "  make windows-amd64"
+	@echo "  make windows-arm64" 
