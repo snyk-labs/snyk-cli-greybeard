@@ -1,0 +1,28 @@
+on: 
+  release:
+    types: [created]
+
+permissions:
+    contents: write
+    packages: write
+
+jobs:
+  releases-matrix:
+    name: Release Go Binary
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # build and publish in parallel: linux/arm64, linux/amd64, windows/arm64, windows/amd64, darwin/arm64, darwin/amd64 
+        goos: [linux, windows, darwin]
+        goarch: [arm64, amd64]
+    steps:
+    - uses: actions/checkout@v2
+    - uses: wangyoucao577/go-release-action@v1
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        goos: ${{ matrix.goos }}
+        goarch: ${{ matrix.goarch }}
+        extra_files: LICENSE README.md
+        sha256sum: true
+        asset_name: greybeard-${GOOS}-${GOARCH}
+        compress_assets: OFF
