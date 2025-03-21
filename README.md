@@ -6,31 +6,47 @@ Snyk Greybeard is experienced, knowledgeable, and tired of your security ignoran
 
 ## Installation
 
-### Prerequisites
-1. [Go](https://golang.org/doc/install) (1.19 or later)
+### Option 1: Download pre-built binary
+
+Download the appropriate binary for your platform from the [Releases](https://github.com/snyk-labs/snyk-cli-greybeard/releases) page.
+
+### Option 2: Build from source
+
+#### Prerequisites
+1. [Go](https://golang.org/doc/install) (1.22.5 or later)
 2. [Snyk CLI](https://docs.snyk.io/snyk-cli/install-the-snyk-cli)
 3. OpenAI API key
 
-### Installation Steps
+#### Building Steps
 1. Clone this repository:
    ```
    git clone https://github.com/snyk-labs/snyk-cli-greybeard.git
    cd snyk-cli-greybeard
    ```
 
-2. Build the executable:
+2. Build and install:
    ```
+   # Build for your current platform
    go build -o greybeard
+   
+   # Or build and install to your system (platform-aware)
+   make install  # May require sudo on Linux/macOS
+   
+   # Or cross-compile for multiple platforms
+   make compile
    ```
+
+   **Platform-specific installation details:**
+   - **Linux/macOS**: Installs to `/usr/local/bin/greybeard`
+   - **Windows**: Installs to `%APPDATA%\snyk-cli-greybeard\greybeard.exe` and provides instructions for adding to PATH
 
 3. Set your OpenAI API key as an environment variable:
    ```
+   # Linux/macOS
    export OPENAI_API_KEY='your-api-key'
-   ```
-
-4. (Optional) Add to your PATH for easier access:
-   ```
-   sudo mv greybeard /usr/local/bin/
+   
+   # Windows
+   setx OPENAI_API_KEY "your-api-key"
    ```
 
 ## Usage
@@ -41,6 +57,11 @@ Use `greybeard` exactly as you would use the regular `snyk` command:
 ./greybeard test
 ./greybeard test --json
 ./greybeard container test alpine:latest
+```
+
+Check the version:
+```
+./greybeard --version
 ```
 
 The tool will:
@@ -71,12 +92,34 @@ You better fix this ASAP unless you want your servers to become someone else's b
 - Robust JSON parsing
 - Same exit codes as the original Snyk command
 - Colorful output formatting
+- Cross-platform support (Linux, macOS, Windows)
 
-## Requirements
+## Development
 
-- Go 1.19+
+### Requirements
+- Go 1.22.5+
 - Snyk CLI
 - OpenAI API key
+- Make (for using the Makefile)
+
+### Makefile Commands
+The included Makefile provides several useful targets:
+
+```
+make compile    # Cross-compile for all platforms
+make install    # Build and install to the system (platform-specific)
+make clean      # Clean build artifacts
+make help       # Show help information
+```
+
+Individual platform targets:
+```
+make linux-amd64
+make linux-arm64
+make darwin-amd64
+make darwin-arm64
+make windows-amd64
+```
 
 ## License
 
