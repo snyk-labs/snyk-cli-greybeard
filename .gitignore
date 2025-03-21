@@ -18,6 +18,9 @@ vendor/
 # Go workspace file
 go.work
 
+# Distribution directory
+dist/
+
 # IDE files
 .idea/
 .vscode/
