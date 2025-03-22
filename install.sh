@@ -28,26 +28,6 @@ error() {
     exit 1
 }
 
-# Retry function with exponential backoff
-retry() {
-    local tries=$1
-    shift
-    local cmd="$@"
-    local n=$tries
-    local pause=1
-    
-    while true; do
-        eval $cmd && break
-        if [[ $n -le 1 ]]; then
-            error "Failed after $tries attempts: $cmd"
-        fi
-        ((n--))
-        warn "Retrying in $pause seconds..."
-        sleep $pause
-        ((pause *= 2))
-    done
-}
-
 ohai "Snyk CLI Greybeard Installer"
 echo "This script will install the latest version of ${BINARY_NAME}"
 echo ""
@@ -101,40 +81,48 @@ get_latest_version() {
     ohai "Fetching latest release information"
     
     # Choose download command (curl or wget)
-    DOWNLOAD_CMD=""
-    if check_command curl; then
-        DOWNLOAD_CMD="curl"
-    elif check_command wget; then
-        DOWNLOAD_CMD="wget"
+    if command -v curl &> /dev/null; then
+        echo "Using curl to fetch release information"
+        
+        # Create temp file for release info
+        local temp_file=$(mktemp)
+        
+        # Fetch the release information with curl
+        if curl -s -L "https://api.github.com/repos/${REPO}/releases/latest" -o "$temp_file"; then
+            # Successfully fetched release info
+            if command -v jq &> /dev/null; then
+                VERSION=$(jq -r .tag_name "$temp_file")
+            else
+                VERSION=$(grep -o '"tag_name"[[:space:]]*:[[:space:]]*"[^"]*"' "$temp_file" | sed -E 's/"tag_name"[[:space:]]*:[[:space:]]*"([^"]+)"/\1/')
+            fi
+            rm -f "$temp_file"
+        else
+            rm -f "$temp_file"
+            warn "Failed to fetch release information. Using v1.0.0 as fallback."
+            VERSION="v1.0.0"
+        fi
+    elif command -v wget &> /dev/null; then
+        echo "Using wget to fetch release information"
+        
+        # Create temp file for release info
+        local temp_file=$(mktemp)
+        
+        # Fetch the release information with wget
+        if wget -q -O "$temp_file" "https://api.github.com/repos/${REPO}/releases/latest"; then
+            # Successfully fetched release info
+            if command -v jq &> /dev/null; then
+                VERSION=$(jq -r .tag_name "$temp_file")
+            else
+                VERSION=$(grep -o '"tag_name"[[:space:]]*:[[:space:]]*"[^"]*"' "$temp_file" | sed -E 's/"tag_name"[[:space:]]*:[[:space:]]*"([^"]+)"/\1/')
+            fi
+            rm -f "$temp_file"
+        else
+            rm -f "$temp_file"
+            warn "Failed to fetch release information. Using v1.0.0 as fallback."
+            VERSION="v1.0.0"
+        fi
     else
         error "Neither curl nor wget found. Please install one of them and try again."
-    fi
-    
-    # Create temp file for release info
-    RELEASE_INFO_FILE=$(mktemp)
-    
-    # Fetch release info with retry
-    if [ "$DOWNLOAD_CMD" = "curl" ]; then
-        retry 3 "curl -s -L \"https://api.github.com/repos/${REPO}/releases/latest\" > \"${RELEASE_INFO_FILE}\"" || {
-            rm -f "${RELEASE_INFO_FILE}"
-            error "Failed to fetch release information"
-        }
-    else
-        retry 3 "wget -q -O \"${RELEASE_INFO_FILE}\" \"https://api.github.com/repos/${REPO}/releases/latest\"" || {
-            rm -f "${RELEASE_INFO_FILE}"
-            error "Failed to fetch release information"
-        }
-    fi
-    
-    RELEASE_INFO=$(cat "${RELEASE_INFO_FILE}")
-    rm -f "${RELEASE_INFO_FILE}"
-    
-    # First try to extract with jq if available (most reliable)
-    if check_command jq "jq not found, using fallback method"; then
-        VERSION=$(echo "$RELEASE_INFO" | jq -r .tag_name)
-    else
-        # Use grep and sed as a fallback
-        VERSION=$(echo "$RELEASE_INFO" | grep -o '"tag_name"[[:space:]]*:[[:space:]]*"[^"]*"' | sed -E 's/"tag_name"[[:space:]]*:[[:space:]]*"([^"]+)"/\1/')
     fi
     
     if [ -z "$VERSION" ] || [ "$VERSION" = "null" ]; then
@@ -166,17 +154,63 @@ install_binary() {
     TMP_FILE="${TMP_DIR}/${ASSET_NAME}"
     
     # Download binary
-    if [ "$DOWNLOAD_CMD" = "curl" ]; then
-        retry 3 "curl -s -L -o \"${TMP_FILE}\" \"${DOWNLOAD_URL}\"" || {
-            error "Failed to download binary from ${DOWNLOAD_URL}"
-        }
+    echo "Downloading binary to ${TMP_FILE}"
+    
+    if command -v curl &> /dev/null; then
+        echo "Using curl to download binary"
+        # Try up to 3 times with curl
+        local attempts=0
+        local max_attempts=3
+        local success=false
+        
+        while [ $attempts -lt $max_attempts ] && [ "$success" = "false" ]; do
+            if curl -s -L -o "${TMP_FILE}" "${DOWNLOAD_URL}"; then
+                success=true
+            else
+                attempts=$((attempts + 1))
+                if [ $attempts -lt $max_attempts ]; then
+                    wait_time=$((2 ** (attempts - 1)))
+                    warn "Download failed, retrying in ${wait_time} seconds... (Attempt ${attempts}/${max_attempts})"
+                    sleep $wait_time
+                fi
+            fi
+        done
+        
+        if [ "$success" = "false" ]; then
+            rm -rf "${TMP_DIR}"
+            error "Failed to download binary from ${DOWNLOAD_URL} after ${max_attempts} attempts"
+        fi
+    elif command -v wget &> /dev/null; then
+        echo "Using wget to download binary"
+        # Try up to 3 times with wget
+        local attempts=0
+        local max_attempts=3
+        local success=false
+        
+        while [ $attempts -lt $max_attempts ] && [ "$success" = "false" ]; do
+            if wget -q -O "${TMP_FILE}" "${DOWNLOAD_URL}"; then
+                success=true
+            else
+                attempts=$((attempts + 1))
+                if [ $attempts -lt $max_attempts ]; then
+                    wait_time=$((2 ** (attempts - 1)))
+                    warn "Download failed, retrying in ${wait_time} seconds... (Attempt ${attempts}/${max_attempts})"
+                    sleep $wait_time
+                fi
+            fi
+        done
+        
+        if [ "$success" = "false" ]; then
+            rm -rf "${TMP_DIR}"
+            error "Failed to download binary from ${DOWNLOAD_URL} after ${max_attempts} attempts"
+        fi
     else
-        retry 3 "wget -q -O \"${TMP_FILE}\" \"${DOWNLOAD_URL}\"" || {
-            error "Failed to download binary from ${DOWNLOAD_URL}"
-        }
+        rm -rf "${TMP_DIR}"
+        error "Neither curl nor wget found. Please install one of them and try again."
     fi
     
     if [ ! -f "${TMP_FILE}" ]; then
+        rm -rf "${TMP_DIR}"
         error "Downloaded file not found at ${TMP_FILE}"
     fi
     
