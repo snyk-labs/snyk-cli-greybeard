@@ -51,9 +51,13 @@ detect_os_arch() {
 
 # Get the latest release info from GitHub
 get_latest_release() {
+    echo "Fetching release info from GitHub API..."
+    
     if command -v curl &> /dev/null; then
+        echo "Using curl to fetch GitHub API data"
         LATEST_RELEASE=$(curl -s "https://api.github.com/repos/$REPO/releases/latest")
     elif command -v wget &> /dev/null; then
+        echo "Using wget to fetch GitHub API data"
         LATEST_RELEASE=$(wget -qO- "https://api.github.com/repos/$REPO/releases/latest")
     else
         echo -e "${RED}Error: Neither curl nor wget found. Please install one of them and try again.${NC}"
@@ -77,16 +81,28 @@ get_latest_release() {
         return
     fi
     
-    # Extract tag_name (version) - handle both JSON key formats that GitHub might return
-    if echo "$LATEST_RELEASE" | grep -q "\"tag_name\":"; then
-        VERSION=$(echo "$LATEST_RELEASE" | grep -o "\"tag_name\":\"[^\"]*\"" | head -1 | grep -o "[^\":]*$" | tr -d '\"')
-    elif echo "$LATEST_RELEASE" | grep -q "\"tag_name\": "; then
-        VERSION=$(echo "$LATEST_RELEASE" | grep -o "\"tag_name\": *\"[^\"]*\"" | head -1 | grep -o "[^\"]*$")
-    else
-        echo -e "${YELLOW}Warning: Could not find tag_name in release info. Falling back to main branch.${NC}"
-        USE_MAIN_BRANCH=true
-        VERSION="main"
-        return
+    # Most reliable approach: Use jq if available
+    if command -v jq &> /dev/null; then
+        echo "Using jq to extract version"
+        VERSION=$(echo "$LATEST_RELEASE" | jq -r '.tag_name // ""')
+        if [ -n "$VERSION" ]; then
+            echo "Found version using jq: $VERSION"
+        fi
+    fi
+    
+    # Fallback: Use sed patterns if jq failed or isn't available
+    if [ -z "$VERSION" ]; then
+        echo "Using sed to extract version"
+        # Convert all newlines to spaces to handle multi-line JSON
+        LATEST_RELEASE_CLEAN=$(echo "$LATEST_RELEASE" | tr '\n' ' ')
+        
+        # Simple fix: Grep for exact tag_name pattern with spaces after colon
+        VERSION=$(echo "$LATEST_RELEASE_CLEAN" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -1)
+        
+        if [ -z "$VERSION" ]; then
+            # Try alternative pattern without spaces
+            VERSION=$(echo "$LATEST_RELEASE_CLEAN" | sed -n 's/.*"tag_name":"\([^"]*\)".*/\1/p' | head -1)
+        fi
     fi
     
     if [ -z "$VERSION" ]; then
@@ -150,30 +166,18 @@ download_binary() {
         ASSET_NAME="${BINARY_NAME}-$OS-$ARCH.exe"
     fi
     
-    echo "Looking for asset: ${BLUE}$ASSET_NAME${NC}"
-    
-    if command -v jq &> /dev/null; then
-        # Get download URL using jq (most reliable)
-        echo "Using jq to parse release data"
-        BINARY_URL=$(echo "$LATEST_RELEASE" | jq -r ".assets[] | select(.name == \"$ASSET_NAME\") | .browser_download_url")
+    # Direct URL override for debugging
+    if [ -n "$DEBUG_URL" ]; then
+        echo "DEBUG: Using direct URL: $DEBUG_URL"
+        BINARY_URL="$DEBUG_URL"
     else
-        echo "Using fallback methods to parse release data"
-        # Method 1: Extract the section containing our asset and look for browser_download_url
-        ASSET_SECTION=$(echo "$LATEST_RELEASE" | grep -A 30 "\"name\": \"$ASSET_NAME\"")
-        if [ -n "$ASSET_SECTION" ]; then
-            URL_LINE=$(echo "$ASSET_SECTION" | grep "browser_download_url")
-            if [ -n "$URL_LINE" ]; then
-                # Extract the URL part and fix potential newlines
-                BINARY_URL=$(echo "$URL_LINE" | grep -o "https://[^\"]*" | tr -d '\n\r')
-                echo "Found URL (Method 1): $BINARY_URL"
-            fi
-        fi
+        echo "Looking for asset: ${BLUE}$ASSET_NAME${NC}"
         
-        # Method 2: Directly construct URL from version
-        if [ -z "$BINARY_URL" ]; then
-            # Try to construct the URL directly
+        # Directly construct the download URL using the version (tag_name)
+        # This is the most reliable method
+        if [ -n "$VERSION" ] && [ "$VERSION" != "main" ]; then
             DIRECT_URL="https://github.com/$REPO/releases/download/$VERSION/$ASSET_NAME"
-            echo "Trying direct URL: $DIRECT_URL"
+            echo "Using version $VERSION to create URL: $DIRECT_URL"
             
             # Verify this URL exists
             if command -v curl &> /dev/null; then
@@ -187,14 +191,12 @@ download_binary() {
             echo "HTTP status for direct URL: $HTTP_CODE"
             if [[ "$HTTP_CODE" == "200" || "$HTTP_CODE" == "302" ]]; then
                 BINARY_URL="$DIRECT_URL"
-                echo "Using direct URL: $BINARY_URL"
+                echo "URL is valid: $BINARY_URL"
+            else 
+                echo "URL returned status $HTTP_CODE"
             fi
         fi
     fi
-    
-    # Debug information about available assets
-    echo "Available assets in release:"
-    echo "$LATEST_RELEASE" | grep -o "\"name\": *\"[^\"]*\"" | sort
     
     if [ -z "$BINARY_URL" ]; then
         echo -e "${YELLOW}Warning: Could not find download URL for $ASSET_NAME. Falling back to building from source.${NC}"
@@ -304,8 +306,15 @@ main() {
     check_dependencies
     detect_os_arch
     
-    echo -e "${BLUE}===== Fetching Latest Release =====${NC}"
-    get_latest_release
+    # Direct version override for debugging
+    if [ -n "$DEBUG_VERSION" ]; then
+        echo "DEBUG: Using hard-coded version: $DEBUG_VERSION"
+        VERSION="$DEBUG_VERSION"
+        USE_MAIN_BRANCH=false
+    else
+        echo -e "${BLUE}===== Fetching Latest Release =====${NC}"
+        get_latest_release
+    fi
     
     echo -e "${BLUE}===== Preparing Binary =====${NC}"
     download_binary
@@ -320,4 +329,30 @@ main() {
     echo -e "You can now run '${BLUE}$BINARY_NAME${NC}' from the command line."
 }
 
-main 
+# If being sourced, don't run main
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    # Allow overriding the version for testing
+    if [ "$1" = "--version" ] && [ -n "$2" ]; then
+        DEBUG_VERSION="$2"
+        echo "DEBUG: Will use version $DEBUG_VERSION"
+    fi
+    
+    # Allow overriding the download URL for testing
+    if [ "$1" = "--url" ] && [ -n "$2" ]; then
+        DEBUG_URL="$2"
+        echo "DEBUG: Will download directly from $DEBUG_URL"
+    fi
+    
+    # Allow directly specifying a version for an already released version
+    if [ "$1" = "--use-release" ] && [ -n "$2" ]; then
+        VERSION="$2"
+        USE_MAIN_BRANCH=false
+        DEBUG_URL="https://github.com/$REPO/releases/download/$VERSION/${BINARY_NAME}-$OS-$ARCH"
+        if [ "$OS" = "windows" ]; then
+            DEBUG_URL="${DEBUG_URL}.exe"
+        fi
+        echo "DEBUG: Will use version $VERSION with URL $DEBUG_URL"
+    fi
+    
+    main
+fi 
