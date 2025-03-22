@@ -146,7 +146,7 @@ install_binary() {
     
     DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${VERSION}/${ASSET_NAME}"
     
-    echo -e "Downloading ${BLUE}${ASSET_NAME}${NC} from:"
+    printf "Downloading ${BLUE}%s${NC} from:\n" "${ASSET_NAME}"
     echo "${DOWNLOAD_URL}"
     
     # Create temporary directory
