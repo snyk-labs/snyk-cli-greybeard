@@ -31,15 +31,15 @@ error() {
 # Retry function with exponential backoff
 retry() {
     local tries=$1
-    local cmd=$2
-    local args=${@:3}
+    shift
+    local cmd="$@"
     local n=$tries
     local pause=1
     
     while true; do
-        "$cmd" "${args[@]}" && break
+        $cmd && break
         if [[ $n -le 1 ]]; then
-            error "Failed after $tries attempts: $cmd ${args[*]}"
+            error "Failed after $tries attempts: $cmd"
         fi
         ((n--))
         warn "Retrying in $pause seconds..."
@@ -112,9 +112,15 @@ get_latest_version() {
     fi
     
     # Fetch release info with retry
-    retry 3 "${DOWNLOAD_CMD}" "${DOWNLOAD_ARGS[@]}" "https://api.github.com/repos/${REPO}/releases/latest" > /tmp/release_info.json || {
-        error "Failed to fetch release information"
-    }
+    if [ "$DOWNLOAD_CMD" = "curl" ]; then
+        retry 3 curl -sSL "https://api.github.com/repos/${REPO}/releases/latest" > /tmp/release_info.json || {
+            error "Failed to fetch release information"
+        }
+    else
+        retry 3 wget -qO- "https://api.github.com/repos/${REPO}/releases/latest" > /tmp/release_info.json || {
+            error "Failed to fetch release information"
+        }
+    fi
     
     RELEASE_INFO=$(cat /tmp/release_info.json)
     rm -f /tmp/release_info.json
