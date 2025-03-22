@@ -110,19 +110,24 @@ get_latest_version() {
         error "Neither curl nor wget found. Please install one of them and try again."
     fi
     
+    # Create temp file for release info
+    RELEASE_INFO_FILE=$(mktemp)
+    
     # Fetch release info with retry
     if [ "$DOWNLOAD_CMD" = "curl" ]; then
-        retry 3 "curl -sSL \"https://api.github.com/repos/${REPO}/releases/latest\" > /tmp/release_info.json" || {
+        retry 3 "curl -s -L \"https://api.github.com/repos/${REPO}/releases/latest\" > \"${RELEASE_INFO_FILE}\"" || {
+            rm -f "${RELEASE_INFO_FILE}"
             error "Failed to fetch release information"
         }
     else
-        retry 3 "wget -qO- \"https://api.github.com/repos/${REPO}/releases/latest\" > /tmp/release_info.json" || {
+        retry 3 "wget -q -O \"${RELEASE_INFO_FILE}\" \"https://api.github.com/repos/${REPO}/releases/latest\"" || {
+            rm -f "${RELEASE_INFO_FILE}"
             error "Failed to fetch release information"
         }
     fi
     
-    RELEASE_INFO=$(cat /tmp/release_info.json)
-    rm -f /tmp/release_info.json
+    RELEASE_INFO=$(cat "${RELEASE_INFO_FILE}")
+    rm -f "${RELEASE_INFO_FILE}"
     
     # First try to extract with jq if available (most reliable)
     if check_command jq "jq not found, using fallback method"; then
@@ -162,11 +167,11 @@ install_binary() {
     
     # Download binary
     if [ "$DOWNLOAD_CMD" = "curl" ]; then
-        retry 3 "curl -L -o \"${TMP_FILE}\" \"${DOWNLOAD_URL}\"" || {
+        retry 3 "curl -s -L -o \"${TMP_FILE}\" \"${DOWNLOAD_URL}\"" || {
             error "Failed to download binary from ${DOWNLOAD_URL}"
         }
     else
-        retry 3 "wget -O \"${TMP_FILE}\" \"${DOWNLOAD_URL}\"" || {
+        retry 3 "wget -q -O \"${TMP_FILE}\" \"${DOWNLOAD_URL}\"" || {
             error "Failed to download binary from ${DOWNLOAD_URL}"
         }
     fi
