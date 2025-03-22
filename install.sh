@@ -37,7 +37,7 @@ retry() {
     local pause=1
     
     while true; do
-        $cmd && break
+        eval $cmd && break
         if [[ $n -le 1 ]]; then
             error "Failed after $tries attempts: $cmd"
         fi
@@ -101,23 +101,22 @@ get_latest_version() {
     ohai "Fetching latest release information"
     
     # Choose download command (curl or wget)
-    DOWNLOAD_CMD="curl"
-    DOWNLOAD_ARGS=(-sSL)
-    if ! check_command curl "curl not found, trying wget"; then
-        if ! check_command wget "Neither curl nor wget found. Please install one of them and try again."; then
-            error "No download tool available"
-        fi
+    DOWNLOAD_CMD=""
+    if check_command curl; then
+        DOWNLOAD_CMD="curl"
+    elif check_command wget; then
         DOWNLOAD_CMD="wget"
-        DOWNLOAD_ARGS=(-qO-)
+    else
+        error "Neither curl nor wget found. Please install one of them and try again."
     fi
     
     # Fetch release info with retry
     if [ "$DOWNLOAD_CMD" = "curl" ]; then
-        retry 3 curl -sSL "https://api.github.com/repos/${REPO}/releases/latest" > /tmp/release_info.json || {
+        retry 3 "curl -sSL \"https://api.github.com/repos/${REPO}/releases/latest\" > /tmp/release_info.json" || {
             error "Failed to fetch release information"
         }
     else
-        retry 3 wget -qO- "https://api.github.com/repos/${REPO}/releases/latest" > /tmp/release_info.json || {
+        retry 3 "wget -qO- \"https://api.github.com/repos/${REPO}/releases/latest\" > /tmp/release_info.json" || {
             error "Failed to fetch release information"
         }
     fi
@@ -163,11 +162,11 @@ install_binary() {
     
     # Download binary
     if [ "$DOWNLOAD_CMD" = "curl" ]; then
-        retry 3 curl -L -o "${TMP_FILE}" "${DOWNLOAD_URL}" || {
+        retry 3 "curl -L -o \"${TMP_FILE}\" \"${DOWNLOAD_URL}\"" || {
             error "Failed to download binary from ${DOWNLOAD_URL}"
         }
     else
-        retry 3 wget -O "${TMP_FILE}" "${DOWNLOAD_URL}" || {
+        retry 3 "wget -O \"${TMP_FILE}\" \"${DOWNLOAD_URL}\"" || {
             error "Failed to download binary from ${DOWNLOAD_URL}"
         }
     fi
@@ -242,10 +241,11 @@ main() {
     echo -e "You can now run '${BLUE}${BINARY_NAME}${NC}' from the command line."
 }
 
+main
+
 # Windows PowerShell/CMD detection (outside of MINGW/MSYS/Cygwin)
+# This check must happen after OS is defined in detect_platform
 if [[ -z "${BASH_VERSION}" ]] && [[ "$OS" = "windows" ]]; then
   warn "This script requires Bash. On Windows, please use Git Bash, WSL, or similar."
   exit 1
-fi
-
-main 
+fi 
