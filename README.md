@@ -14,7 +14,56 @@ The easiest way to install is with the following command:
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/snyk-labs/snyk-cli-greybeard/refs/heads/main/install.sh)"
 ```
 
-This will download and install the latest version for your platform. You'll still need to set your OpenAI API key after installation.
+This will download and install the latest version for your platform.
+
+## Setting up your OpenAI API Key (Required)
+
+Greybeard requires an OpenAI API key to function. Follow these steps to set it up:
+
+1. **Get an API key**: 
+   - Sign up or log in at [OpenAI's platform](https://platform.openai.com/)
+   - Navigate to [API keys](https://platform.openai.com/account/api-keys) and create a new secret key
+
+2. **Set as environment variable**:
+
+   **Linux/macOS**:
+   ```bash
+   # Add to your shell profile (.bashrc, .zshrc, etc.) for persistence
+   echo 'export OPENAI_API_KEY="your-api-key"' >> ~/.bashrc
+   source ~/.bashrc
+
+   # Or set temporarily for the current session
+   export OPENAI_API_KEY="your-api-key"
+   ```
+
+   **Windows (Command Prompt)**:
+   ```cmd
+   # Set permanently (requires restart of CMD after setting)
+   setx OPENAI_API_KEY "your-api-key"
+
+   # Set for current session only
+   set OPENAI_API_KEY=your-api-key
+   ```
+
+   **Windows (PowerShell)**:
+   ```powershell
+   # Set permanently
+   [Environment]::SetEnvironmentVariable("OPENAI_API_KEY", "your-api-key", "User")
+
+   # Set for current session only
+   $env:OPENAI_API_KEY = "your-api-key"
+   ```
+
+3. **Verify the key is set**:
+   ```bash
+   # Linux/macOS/Windows PowerShell
+   echo $OPENAI_API_KEY
+   
+   # Windows Command Prompt
+   echo %OPENAI_API_KEY%
+   ```
+
+> **Important**: Without a valid OpenAI API key, Greybeard will not work! The application needs this key to generate the grumpy security expert commentary.
 
 ### Option 2: Download pre-built binary
 
