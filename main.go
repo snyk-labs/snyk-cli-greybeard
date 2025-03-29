@@ -112,53 +112,22 @@ func isCommandAvailable(command string) bool {
 
 // executeSnyk executes the Snyk CLI with given arguments and returns its output and exit code
 func executeSnyk(args []string) (string, int) {
-	// Set environment variables to discourage interactive prompts
-	env := os.Environ()
-	env = append(env, "SNYK_DISABLE_ANALYTICS=1")
-	env = append(env, "CI=true")
-
-	// Create command
+	// Create command with snyk
 	cmd := exec.Command("snyk", args...)
-	cmd.Env = env
 
-	// Capture stdout and stderr
+	// Capture both stdout and stderr
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	// Set a timeout channel
-	done := make(chan error, 1)
-	go func() {
-		done <- cmd.Run()
-	}()
-
-	// Wait for command to complete or timeout
-	var err error
-	select {
-	case err = <-done:
-		// Command completed
-	case <-time.After(60 * time.Second):
-		// Command timed out
-		if cmd.Process != nil {
-			cmd.Process.Kill()
-		}
-		return "Snyk command timed out after 60 seconds. The command may require interactive input or authentication.", 1
-	}
+	// Run the command
+	cmd.Run()
 
 	// Combine stdout and stderr
 	output := stdout.String() + stderr.String()
 
-	// Determine exit code
-	exitCode := 0
-	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			exitCode = exitErr.ExitCode()
-		} else {
-			exitCode = 1
-		}
-	}
-
-	return output, exitCode
+	// Return output and exit code
+	return output, cmd.ProcessState.ExitCode()
 }
 
 // callOpenAI sends a request to the OpenAI API and returns the response
