@@ -1,136 +1,105 @@
 # snyk-cli-greybeard
 
-Want to make your security findings feel more "real"? We're excited to announce the official public release of Snyk CLI Greybeard edition! Unlike the normal Snyk CLI which will help you find security issues in your code, containers, dependencies, and IaC, this special "Greybeard" edition of the CLI will give you the same information, but with much more personality.
+A wrapper around the [Snyk CLI](https://docs.snyk.io/snyk-cli) that adds commentary from a grumpy old security expert.
 
-Snyk Greybeard is experienced, knowledgeable, and tired of your security ignorance. Greybeard has a more sarcastic, dry, and endearing grumpiness that transforms your boring security scans into a heated roast, with lots of fun commentary to brighten your day.
+You run `greybeard` instead of `snyk`. It runs Snyk with your arguments, prints the normal Snyk output, and then prints a sarcastic summary of the important findings. The summary comes from OpenAI.
 
-## Installation
+## Before you start
 
-### Option 1: One-line Installer (Linux, macOS, Windows)
+You need two things:
 
-The easiest way to install is with the following command:
+- The [Snyk CLI](https://docs.snyk.io/snyk-cli/install-the-snyk-cli), installed and signed in (`snyk auth`).
+- An [OpenAI API key](https://platform.openai.com/api-keys). Greybeard does not work without it. Each run makes one API call, and OpenAI can charge you for it.
+
+**Privacy note:** Greybeard sends the full Snyk output to the OpenAI API (model `gpt-4o`). That output can include package names, file paths, and vulnerability details. Do not use Greybeard if you cannot share this data with OpenAI.
+
+## Install
+
+### Installer script (Linux, macOS, Windows)
 
 ```bash
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/snyk-labs/snyk-cli-greybeard/refs/heads/main/install.sh)"
 ```
 
-This will download and install the latest version for your platform.
+The script downloads the latest release for your system. On Windows, run it in Git Bash or WSL.
 
-## Setting up your OpenAI API Key (Required)
+On Linux and macOS, it installs `greybeard` in the first of these folders that exists and that you can write to: `/usr/local/bin`, `~/.local/bin`, `~/bin`. If none qualifies, it creates `~/.local/bin`. On Windows, it installs to `%APPDATA%\snyk-cli-greybeard`. If the folder is not in your `PATH`, the script tells you how to add it.
 
-Greybeard requires an OpenAI API key to function. Follow these steps to set it up:
+### Download a binary
 
-1. **Get an API key**: 
-   - Sign up or log in at [OpenAI's platform](https://platform.openai.com/)
-   - Navigate to [API keys](https://platform.openai.com/account/api-keys) and create a new secret key
+Download the file for your system from the [Releases](https://github.com/snyk-labs/snyk-cli-greybeard/releases) page. Rename it to `greybeard` and put it in a folder in your `PATH`. On Linux and macOS, run `chmod +x greybeard` first.
 
-2. **Set as environment variable**:
+### Build from source
 
-   **Linux/macOS**:
-   ```bash
-   # Add to your shell profile (.bashrc, .zshrc, etc.) for persistence
-   echo 'export OPENAI_API_KEY="your-api-key"' >> ~/.bashrc
-   source ~/.bashrc
+You need [Go](https://go.dev/doc/install) 1.22.5 or later.
 
-   # Or set temporarily for the current session
-   export OPENAI_API_KEY="your-api-key"
-   ```
-
-   **Windows (Command Prompt)**:
-   ```cmd
-   # Set permanently (requires restart of CMD after setting)
-   setx OPENAI_API_KEY "your-api-key"
-
-   # Set for current session only
-   set OPENAI_API_KEY=your-api-key
-   ```
-
-   **Windows (PowerShell)**:
-   ```powershell
-   # Set permanently
-   [Environment]::SetEnvironmentVariable("OPENAI_API_KEY", "your-api-key", "User")
-
-   # Set for current session only
-   $env:OPENAI_API_KEY = "your-api-key"
-   ```
-
-3. **Verify the key is set**:
-   ```bash
-   # Linux/macOS/Windows PowerShell
-   echo $OPENAI_API_KEY
-   
-   # Windows Command Prompt
-   echo %OPENAI_API_KEY%
-   ```
-
-> **Important**: Without a valid OpenAI API key, Greybeard will not work! The application needs this key to generate the grumpy security expert commentary.
-
-### Option 2: Download pre-built binary
-
-Download the appropriate binary for your platform from the [Releases](https://github.com/snyk-labs/snyk-cli-greybeard/releases) page.
-
-### Option 3: Build from source
-
-#### Prerequisites
-1. [Go](https://golang.org/doc/install) (1.22.5 or later)
-2. [Snyk CLI](https://docs.snyk.io/snyk-cli/install-the-snyk-cli)
-3. OpenAI API key
-
-#### Building Steps
-1. Clone this repository:
-   ```
-   git clone https://github.com/snyk-labs/snyk-cli-greybeard.git
-   cd snyk-cli-greybeard
-   ```
-
-2. Build and install:
-   ```
-   # Build for your current platform
-   go build -o greybeard
-   
-   # Or build and install to your system (platform-aware)
-   make install  # May require sudo on Linux/macOS
-   
-   # Or cross-compile for multiple platforms
-   make compile
-   ```
-
-   **Platform-specific installation details:**
-   - **Linux/macOS**: Installs to `/usr/local/bin/greybeard`
-   - **Windows**: Installs to `%APPDATA%\snyk-cli-greybeard\greybeard.exe` and provides instructions for adding to PATH
-
-3. Set your OpenAI API key as an environment variable:
-   ```
-   # Linux/macOS
-   export OPENAI_API_KEY='your-api-key'
-   
-   # Windows
-   setx OPENAI_API_KEY "your-api-key"
-   ```
-
-## Usage
-
-Use `greybeard` exactly as you would use the regular `snyk` command:
-
-```
-./greybeard test
-./greybeard test --json
-./greybeard container test alpine:latest
+```bash
+git clone https://github.com/snyk-labs/snyk-cli-greybeard.git
+cd snyk-cli-greybeard
+go build -o greybeard
 ```
 
-Check the version:
-```
-./greybeard --version
+To build and copy the binary to `/usr/local/bin` (Linux and macOS), run `make install`. Use `sudo make install` if you cannot write to that folder.
+
+Other `make` targets:
+
+- `make compile` builds binaries for all supported systems into `dist/`.
+- `make clean` removes build output.
+- `make help` lists the targets.
+
+## Set your OpenAI API key
+
+Greybeard reads the key from the `OPENAI_API_KEY` environment variable. This is the only setting.
+
+Linux and macOS:
+
+```bash
+export OPENAI_API_KEY="your-api-key"
 ```
 
-The tool will:
-1. Run the Snyk CLI with all your arguments
-2. Display the raw Snyk CLI output first
-3. Follow with a grumpy security expert's commentary on the important findings
+Windows PowerShell:
 
-## Example Output
-
+```powershell
+$env:OPENAI_API_KEY = "your-api-key"
 ```
+
+These commands last for the current terminal session only. To keep the key, add the `export` line to your shell profile (for example `~/.bashrc` or `~/.zshrc`). On Windows, use `setx OPENAI_API_KEY "your-api-key"` and open a new terminal.
+
+## Use it
+
+Use `greybeard` in place of `snyk`. It passes all arguments to Snyk.
+
+```bash
+greybeard test
+greybeard test --json
+greybeard container test alpine:latest
+```
+
+To show the Greybeard version, run `greybeard --version`.
+
+Greybeard works like this:
+
+```mermaid
+flowchart LR
+    A[greybeard args] --> B[snyk args]
+    B --> C[Print Snyk output]
+    C --> D[Send output to OpenAI]
+    D --> E[Print Greybeard commentary]
+```
+
+Things to know:
+
+- Greybeard waits for Snyk to finish before it prints anything.
+- Greybeard does not pass your keyboard input to Snyk. Run commands that ask questions, such as `snyk auth`, with `snyk` directly.
+- The exit code is the exit code of Snyk, even when the OpenAI call fails.
+- If the OpenAI call fails or takes more than 30 seconds, you see an error message after the Snyk output.
+- The commentary is not always the same. The model is told to focus on real security findings and to skip minor warnings. It can still get things wrong, so check the raw Snyk output.
+
+## Example
+
+The commentary below is an example. Your output will be different.
+
+```text
 Raw Snyk CLI Output:
 [The original Snyk CLI output appears here]
 
@@ -138,47 +107,9 @@ Raw Snyk CLI Output:
 
 🧔‍♂️ Security Greybeard says:
 
-Listen up, youngster! I see you've got a critical RCE vulnerability in that package. 
-Back in my day, we'd have been fired for leaving something this obvious in production. 
+Listen up, youngster! I see you've got a critical RCE vulnerability in that package.
+Back in my day, we'd have been fired for leaving something this obvious in production.
 You better fix this ASAP unless you want your servers to become someone else's bitcoin miner...
-```
-
-## Features
-
-- Displays both raw Snyk output and Greybeard commentary
-- Focuses on important security findings and ignores noise
-- Proper handling of command timeouts
-- Robust JSON parsing
-- Same exit codes as the original Snyk command
-- Colorful output formatting
-- Cross-platform support (Linux, macOS, Windows)
-
-## Development
-
-### Requirements
-- Go 1.22.5+
-- Snyk CLI
-- OpenAI API key
-- Make (for using the Makefile)
-
-### Makefile Commands
-The included Makefile provides several useful targets:
-
-```
-make compile    # Cross-compile for all platforms
-make install    # Build and install to the system (platform-specific)
-make clean      # Clean build artifacts
-make help       # Show help information
-```
-
-Individual platform targets:
-```
-make linux-amd64
-make linux-arm64
-make darwin-amd64
-make darwin-arm64
-make windows-amd64
-make windows-arm64
 ```
 
 ## License
